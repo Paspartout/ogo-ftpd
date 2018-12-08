@@ -384,7 +384,8 @@ void wifi_enable(void)
     }
 
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
+    // UGH: This made my wifi not work reliably
+    // ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
 
     s_wifi_state = WIFI_STATE_DISCONNECTED;
