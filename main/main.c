@@ -15,6 +15,7 @@
 #include "sdcard.h"
 #include "wifi.h"
 #include "esp_spiffs.h"
+#include "ftp_server.h"
 
 #include "event.h"
 #include "graphics.h"
@@ -22,6 +23,7 @@
 #include "OpenSans_Regular_11X12.h"
 
 static void display_status_task(void *arg);
+static void display_config_task(void *arg);
 static void on_wifi_changed(system_event_id_t id);
 
 void app_main(void)
@@ -39,20 +41,24 @@ void app_main(void)
       .format_if_mount_failed = true,
     };
     ESP_ERROR_CHECK(esp_vfs_spiffs_register(&conf));
+
+	// Try to init wifi and load config from spiffs or sdcard
 	wifi_init();
-	//wifi_restore_config();
-	wifi_enable(); // TODO: FIx wifi configuration
+	if (wifi_load_config() == -1) {
+		printf("using sdcard config...\n");
+		if (wifi_restore_config() == -1) {
+			xTaskCreate(display_config_task, "display_config", 8192, NULL, 5, NULL);
+		}
+	}
 
+	wifi_enable();
 	wifi_register_changed_callback(on_wifi_changed);
-
-    const esp_partition_t *partition = esp_ota_get_running_partition();
-	printf("booted from partition %s\n", partition->label);
-	fflush(stdout);
+	ftp_init();
 
     xTaskCreate(display_status_task, "display_status", 8192, NULL, 5, NULL);
 }
 
-// Notify display and
+// Notify display
 void on_wifi_changed(system_event_id_t id) {
     event_t event;
 	switch(id) {
@@ -105,7 +111,7 @@ void view_update() {
 	wifi_state_t state = wifi_get_state();
 	ip4_addr_t ip = wifi_get_ip();
 	state_str(&wifi_state_str, state);
-	snprintf(s, sizeof(s), "State %s, IP:" IPSTR, wifi_state_str, IP2STR(&ip));
+	snprintf(s, sizeof(s), "WIFI %s, IP:" IPSTR, wifi_state_str, IP2STR(&ip));
 	tf_metrics_t m = tf_get_str_metrics(tf, s);
 
 	// determine text location
@@ -159,17 +165,16 @@ static void display_status_task(void *arg) {
 				}
 				break;
 			case EVENT_TYPE_WIFI_DISCONNECTED:
-				// TODO: Notify ftp server task
 				view_update();
-				printf("notifying ftp server\n");
+				ftp_stop();
+				ftp_init(); // TODO: Probably have to move this?
 				break;
 			case EVENT_TYPE_WIFI_CONNECTED:
 				view_update();
 				break;
 			case EVENT_TYPE_WIFI_GOT_IP:
-				// TODO: Notify ftp server task
 				view_update();
-				printf("notifying ftp server\n");
+				ftp_start();
 				break;
 			default:
 				printf("other event detected: %d\n", event.type);
@@ -178,13 +183,20 @@ static void display_status_task(void *arg) {
 	}
 
 	// Cleanup
+	ftp_stop();
 	display_clear(0);
 	wifi_disable();
 	sdcard_deinit();
+
 	// Return to menu/firmware after exit
     const esp_partition_t *part = esp_partition_find_first(
         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
     esp_ota_set_boot_partition(part);
     esp_restart();
+}
+
+// This task displays an error message describing on how to set the password
+static void display_config_task(void *arg) {
+	// TODO: Display help message or let user configure wifi
 }
 

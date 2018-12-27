@@ -139,10 +139,11 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
     return ESP_OK;
 }
 
-static void load_config(const char *path)
+static int load_config(const char *path)
 {
     const char *data;
-
+	
+	// Remove loaded networks before reading new ones
     if (wifi_networks != NULL) {
         for (int i = 0; i < wifi_network_count; i++) {
             free(wifi_networks[i]);
@@ -154,8 +155,8 @@ static void load_config(const char *path)
 
     data = json_fread(path);
     if (data == NULL) {
-		printf("cant read wifi json!\n");
-        return;
+		perror("cant open wifi json");
+        return -1;
     }
 
     struct json_token t;
@@ -163,6 +164,8 @@ static void load_config(const char *path)
         char *ssid = NULL;
         char *password = NULL; 
         char *authmode = NULL;
+
+		// TODO: Error checking? File contents could be malformed
         json_scanf(t.ptr, t.len, "{ssid: %Q, password: %Q, authmode: %Q}", &ssid, &password, &authmode);
 
         wifi_networks = realloc(wifi_networks, sizeof(wifi_network_t *) * (wifi_network_count + 1));
@@ -200,6 +203,8 @@ static void load_config(const char *path)
         wifi_networks[wifi_network_count] = network;
         wifi_network_count += 1;
     }
+
+	return 0;
 }
 
 static int json_printf_network(struct json_out *out, va_list *ap)
@@ -364,7 +369,6 @@ void wifi_init(void)
 {
     tcpip_adapter_init();
     ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
-    load_config(CONFIG_FILE);
 }
 
 void wifi_enable(void)
@@ -456,10 +460,18 @@ void wifi_backup_config(void)
     write_config(BACKUP_CONFIG_FILE);
 }
 
-void wifi_restore_config(void)
+int wifi_restore_config(void)
 {
-    load_config(BACKUP_CONFIG_FILE);
+    if (load_config(BACKUP_CONFIG_FILE) != 0) {
+		return -1;
+	}
     write_config(CONFIG_FILE ".new");
     remove(CONFIG_FILE);
     rename(CONFIG_FILE ".new", CONFIG_FILE);
+	return 0;
+}
+
+/// Try to load config from spiffs
+int wifi_load_config(void) {
+    return load_config(CONFIG_FILE);
 }
