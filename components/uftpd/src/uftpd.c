@@ -426,7 +426,7 @@ static int handle_ftpcmd_logged_in(const FtpCmd *cmd, Client *client) {
 				if (sent_bytes == -1) {
 					perror("send");
 					close(data_socket);
-					return -2;
+					return -1;
 				}
 				reamining_bytes -= sent_bytes;
 				dprintf("remaining %ld bytes\n", reamining_bytes);
@@ -544,8 +544,8 @@ static int handle_ftpcmd_logged_in(const FtpCmd *cmd, Client *client) {
 		// TODO: Buffer first and the send once we know we got no error
 		DIR *dir = opendir(pathname);
 		if (dir == NULL) {
-			rreplyf(client->socket, "450 Filesystem error: %s\n", strerror(errno));
 			perror("opendir");
+			rreplyf(client->socket, "450 Filesystem error: %s\n", strerror(errno));
 			return -2;
 		}
 
@@ -618,7 +618,7 @@ static int handle_ftpcmd_logged_in(const FtpCmd *cmd, Client *client) {
 		break;
 	default:
 		rreply(client_sock, "502 Command parsed but not implemented yet.\n");
-		return -1;
+		return -2;
 		break;
 	}
 	return 0;
@@ -657,7 +657,7 @@ static int handle_ftpcmd(FtpCmd *cmd, Client *client, uftpd_callback ev_callback
 	case LoggedIn:
 		// Allow every command
 		if (handle_ftpcmd_logged_in(cmd, client) == -1) {
-			notify_user(Error, "FTP Network error");
+			notify_user(Error, "Network/IO Error");
 		}
 		break;
 	default:

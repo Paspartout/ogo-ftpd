@@ -63,7 +63,7 @@ void ftp_init(void) {
 	uftpd_init_localhost(&ctx, "21");
 	uftpd_set_start_dir(&ctx, "/sdcard");
 	uftpd_set_ev_callback(&ctx, notify_user);
-    xTaskCreate(ftp_task, "ftp server", 65536, NULL, 5, &ftp_task_handle);
+    xTaskCreate(ftp_task, "ftp server", 65536, NULL, 3, &ftp_task_handle);
 }
 
 
