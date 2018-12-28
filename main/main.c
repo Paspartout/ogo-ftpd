@@ -29,6 +29,10 @@
 #define VERSION "0.0.0"
 #endif
 
+#ifndef APP_NAME
+#define APP_NAME "ogo-ftpd"
+#endif
+
 // Notify task of wifi change
 void on_wifi_changed(system_event_id_t id) {
     event_t event;
@@ -72,12 +76,13 @@ char* wifi_state_str(wifi_state_t state) {
 
 
 static tf_t *ui_font;
+#define FONT_HEIGHT 12
 
 static void ui_init() {
     ui_font = tf_new(&font_OpenSans_Regular_11X12, 0xFFFF, 0, TF_ALIGN_CENTER);
 
 	// draw title
-	const char *title = "odroid-ftp " VERSION;
+	const char *title = APP_NAME " " VERSION;
 	tf_metrics_t m = tf_get_str_metrics(ui_font, title);
 	point_t text_location = {
 		.x = fb->width/2 - m.width/2,
@@ -129,40 +134,18 @@ static void ui_display_ftp_status(event_ftp_t ev) {
 	} else {
 		snprintf(msg, sizeof(msg), "%s: %s", event_names[ev.ftp_event], ev.details);
 	}
-	ui_display_text_centered(120, msg);
+	ui_display_text_centered(100+FONT_HEIGHT, msg);
 }
 
-const char *help_msg = "You now can connect to the ip address with port 21.";
-const char *help_msg2 = "Press MENU to go back to the firmware(or launcher).";
+const char *connect_prompt = "You now can connect to the ip address with port 21.";
+const char *help_msg0 = "MENU: Back to firmware | START: Restart app.";
+const char *help_msg1 = "If you can't connect restart might help :/";
 
 // Display some help
 static void ui_display_help() {
-	tf_metrics_t m = tf_get_str_metrics(ui_font, help_msg);
-	point_t text_location = {
-		.x = fb->width/2 - m.width/2,
-		.y = fb->height-2*m.height,
-	};
-	tf_draw_str(fb, ui_font, help_msg, text_location);
-	text_location.y += m.height;
-	tf_draw_str(fb, ui_font, help_msg2, text_location);
+	ui_display_text_centered(fb->height-2*FONT_HEIGHT, help_msg0);
+	ui_display_text_centered(fb->height-FONT_HEIGHT, help_msg1);
 
-	display_update();
-}
-
-// Remove help message
-static void ui_clear_help() {
-	tf_metrics_t m = tf_get_str_metrics(ui_font, help_msg);
-	point_t text_location = {
-		.x = fb->width/2 - m.width/2,
-		.y = fb->height-2*m.height,
-	};
-	rect_t clear_rec = {
-		.x = 0,
-		.y = text_location.y,
-		.width = fb->width,
-		.height = 2*m.height,
-	};
-	fill_rectangle(fb, clear_rec, 0);
 	display_update();
 }
 
@@ -189,12 +172,23 @@ static void ui_display_msg(const char *title, const char *msg) {
 	display_update();
 }
 
+void restart() {
+	ftp_stop();
+	display_clear(0);
+	display_drain();
+	wifi_disable();
+	sdcard_deinit();
+	ui_free();
+	esp_restart();
+}
+
 // This task updates the status of the wifi and ftp server and reacts to user input
 static void main_task(void *arg) {
     event_t event;
 	bool running = true;
 	BaseType_t got_event;
 	ui_display_status();
+	ui_display_help();
 
 	while(running) {
 		// Handle events
@@ -206,13 +200,12 @@ static void main_task(void *arg) {
 			case EVENT_TYPE_KEYPAD:
 				if (event.keypad.pressed & KEYPAD_MENU) {
 					running = false;
-				} else if (event.keypad.pressed) {
-					printf("another keypress detected: %d\n", event.keypad.pressed);
-					// TODO: Handle things like start, stop server
+				} else if (event.keypad.pressed & KEYPAD_START) {
+					restart();
 				}
 				break;
 			case EVENT_TYPE_WIFI_DISCONNECTED:
-				ui_clear_help();
+				ui_display_text_centered(100+FONT_HEIGHT*2, ""); // clears the line
 				ui_display_status();
 				ftp_stop();
 				ftp_init();
@@ -221,8 +214,8 @@ static void main_task(void *arg) {
 				ui_display_status();
 				break;
 			case EVENT_TYPE_WIFI_GOT_IP:
+				ui_display_text_centered(100+FONT_HEIGHT*2, connect_prompt);
 				ui_display_status();
-				ui_display_help();
 				ftp_start();
 				break;
 			case EVENT_TYPE_FTP_EVENT:
@@ -242,9 +235,12 @@ static void main_task(void *arg) {
 	ui_free();
 
 	// Return to menu/firmware after exit
-	// TODO: What todo in official firmware?
-    const esp_partition_t *part = esp_partition_find_first(
-        ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+    const esp_partition_t *part;
+	part = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+	// If no factory partition found, use first ota one
+	if (part == NULL)
+		part = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+
     esp_ota_set_boot_partition(part);
     esp_restart();
 }

@@ -3,7 +3,9 @@
 # project subdirectory.
 #
 
-PROJECT_NAME := odroid-ftp
+PROJECT_NAME := ogo-ftpd
+VERSION := 0.1.0
+
 
 include $(IDF_PATH)/make/project.mk
 
@@ -14,6 +16,8 @@ APP_ICON_DIR := $(PROJECT_PATH)/media/icons
 APP_APP:=$(APP_BIN:.bin=.app)
 APP_FW:=$(APP_BIN:.bin=.fw)
 
+CPPFLAGS += -D APP_NAME=\"$(PROJECT_NAME)\" -D VERSION=\"$(VERSION)\"
+
 dist: $(APP_APP) $(APP_FW)
 
 $(APP_APP): $(APP_BIN)
@@ -22,5 +26,5 @@ $(APP_APP): $(APP_BIN)
 
 $(APP_FW): $(APP_BIN)
 	@echo MKFW $@
-	@$(MKFW) "$(PROJECT_NAME)" media/tile.raw 0 16 1048576 "$(PROJECT_NAME)" $^
+	@$(MKFW) "$(PROJECT_NAME)($(VERSION))" media/tile.raw 0 16 1048576 "$(PROJECT_NAME)" $^
 	@mv firmware.fw $@
