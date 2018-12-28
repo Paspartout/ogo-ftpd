@@ -14,10 +14,6 @@ static sdmmc_card_t *sdcard = NULL;
 
 esp_err_t sdcard_init(const char *mount_path)
 {
-    if (sdcard) {
-        return ESP_FAIL;
-    }
-
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = HSPI_HOST;
     host.max_freq_khz = SDMMC_FREQ_DEFAULT;

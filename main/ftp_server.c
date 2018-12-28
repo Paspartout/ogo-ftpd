@@ -12,21 +12,22 @@
 
 #include "ftp_server.h"
 
+#include "event.h"
 #include <uftpd.h>
 
 TaskHandle_t ftp_task_handle;
 uftpd_ctx ctx;
 bool restarting = true;
+char details_buf[128];
 
 static void ftp_task(void *arg) {
 	// Wait for notification to start
 	ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-	printf("starting stuff!");
 	while(restarting) {
-		puts("starting server!");
+		puts("starting server\n");
 		uftpd_start(&ctx);
 	}
-	puts("stopping server!");
+	puts("stopping server\n");
 	vTaskDelete(NULL);
 }
 
@@ -44,8 +45,18 @@ void ftp_start(void) {
 }
 
 void notify_user(uftpd_event ev, const char *details) {
-	// TODO: Send to user interface task
-	printf("got event: %d\n", ev);
+	event_t event;
+	event.type = EVENT_TYPE_FTP_EVENT;
+	event.ftp.ftp_event = ev;
+
+	if (details != NULL) {
+		strncpy(details_buf, details, sizeof(details_buf));
+		event.ftp.details = (const char*)&details_buf;
+	} else {
+		event.ftp.details = NULL;
+	}
+
+    xQueueSend(event_queue, &event, portMAX_DELAY);
 }
 
 void ftp_init(void) {

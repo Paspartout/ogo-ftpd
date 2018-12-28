@@ -139,7 +139,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
     return ESP_OK;
 }
 
-static int load_config(const char *path)
+int wifi_load_config(const char *path)
 {
     const char *data;
 	
@@ -462,16 +462,11 @@ void wifi_backup_config(void)
 
 int wifi_restore_config(void)
 {
-    if (load_config(BACKUP_CONFIG_FILE) != 0) {
+    if (wifi_load_config(BACKUP_CONFIG_FILE) != 0) {
 		return -1;
 	}
     write_config(CONFIG_FILE ".new");
     remove(CONFIG_FILE);
     rename(CONFIG_FILE ".new", CONFIG_FILE);
 	return 0;
-}
-
-/// Try to load config from spiffs
-int wifi_load_config(void) {
-    return load_config(CONFIG_FILE);
 }

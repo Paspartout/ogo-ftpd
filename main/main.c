@@ -22,43 +22,14 @@
 #include "tf.h"
 #include "OpenSans_Regular_11X12.h"
 
-static void display_status_task(void *arg);
-static void display_config_task(void *arg);
-static void on_wifi_changed(system_event_id_t id);
+#define WIFI_CONFIG_PATH "/sdcard/wifi.json"
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-void app_main(void)
-{
-    display_init();
-    backlight_init();
-    keypad_init();
-    event_init();
-    ESP_ERROR_CHECK(nvs_flash_init());
-    sdcard_init("/sdcard");
-    esp_vfs_spiffs_conf_t conf = {
-      .base_path = "/spiffs",
-      .partition_label = NULL,
-      .max_files = 5,
-      .format_if_mount_failed = true,
-    };
-    ESP_ERROR_CHECK(esp_vfs_spiffs_register(&conf));
+#ifndef VERSION
+#define VERSION "0.0.0"
+#endif
 
-	// Try to init wifi and load config from spiffs or sdcard
-	wifi_init();
-	if (wifi_load_config() == -1) {
-		printf("using sdcard config...\n");
-		if (wifi_restore_config() == -1) {
-			xTaskCreate(display_config_task, "display_config", 8192, NULL, 5, NULL);
-		}
-	}
-
-	wifi_enable();
-	wifi_register_changed_callback(on_wifi_changed);
-	ftp_init();
-
-    xTaskCreate(display_status_task, "display_status", 8192, NULL, 5, NULL);
-}
-
-// Notify display
+// Notify task of wifi change
 void on_wifi_changed(system_event_id_t id) {
     event_t event;
 	switch(id) {
@@ -79,45 +50,53 @@ void on_wifi_changed(system_event_id_t id) {
 
 
 // set dest pointer to description of state
-void state_str(char** dest, wifi_state_t state) {
+char* wifi_state_str(wifi_state_t state) {
 	switch (state) {
 		case WIFI_STATE_DISABLED:
-			*dest = "DISABLED";
+			return "DISABLED";
 			break;
 		case WIFI_STATE_SCANNING:
-			*dest = "SCANNING";
+			return "SCANNING";
 			break;
 		case WIFI_STATE_CONNECTING:
-			*dest = "CONNECTING";
+			return "CONNECTING";
 			break;
 		case WIFI_STATE_CONNECTED:
-			*dest = "CONNECTED";
+			return "CONNECTED";
 			break;
 		default:
-			*dest = "UNKNOWN";
+			return "UNKNOWN";
 			break;
 	}
 }
 
-static tf_t *tf;
-static char *wifi_state_str;
 
-void view_init() {
-    tf = tf_new(&font_OpenSans_Regular_11X12, 0xFFFF, 0, TF_ALIGN_CENTER);
-}
+static tf_t *ui_font;
 
-void view_update() {
-	char s[48];
-	wifi_state_t state = wifi_get_state();
-	ip4_addr_t ip = wifi_get_ip();
-	state_str(&wifi_state_str, state);
-	snprintf(s, sizeof(s), "WIFI %s, IP:" IPSTR, wifi_state_str, IP2STR(&ip));
-	tf_metrics_t m = tf_get_str_metrics(tf, s);
+static void ui_init() {
+    ui_font = tf_new(&font_OpenSans_Regular_11X12, 0xFFFF, 0, TF_ALIGN_CENTER);
 
-	// determine text location
+	// draw title
+	const char *title = "odroid-ftp " VERSION;
+	tf_metrics_t m = tf_get_str_metrics(ui_font, title);
 	point_t text_location = {
 		.x = fb->width/2 - m.width/2,
-		.y = fb->height/2 - m.height/2,
+		.y = 0,
+	};
+	tf_draw_str(fb, ui_font, title, text_location);
+	display_update();
+}
+
+static void ui_free() {
+	free(ui_font);
+}
+
+static void ui_display_text_centered(int y, const char *text) {
+	tf_metrics_t m = tf_get_str_metrics(ui_font, text);
+	// determine message location
+	point_t text_location = {
+		.x = fb->width/2 - m.width/2,
+		.y = y,
 	};
 	rect_t clear_rec = {
 		.x = 0,
@@ -125,31 +104,99 @@ void view_update() {
 		.width = fb->width,
 		.height = m.height,
 	};
-
-	// clear old text
 	fill_rectangle(fb, clear_rec, 0);
-	// draw new text
-	tf_draw_str(fb, tf, s, text_location);
+	tf_draw_str(fb, ui_font, text, text_location);
 	display_update();
 }
 
-// This task displays the status of the wifi and ftp server
-static void display_status_task(void *arg) {
+// Update the status display
+static void ui_display_status() {
+	char status[48];
+	ip4_addr_t ip = wifi_get_ip();
+	snprintf(status, sizeof(status), "WIFI %s, IP:" IPSTR, wifi_state_str(wifi_get_state()), IP2STR(&ip));
+	ui_display_text_centered(100, status);
+	display_update();
+}
+
+const char *event_names[] = {
+    "ServerStarted", "ServerStopped", "ClientConnected", "ClientDisconnected", "Error",
+};
+
+static void ui_display_ftp_status(event_ftp_t ev) {
+	char msg[128];
+	if (ev.details == NULL) {
+		snprintf(msg, sizeof(msg), "%s", event_names[ev.ftp_event]);
+	} else {
+		snprintf(msg, sizeof(msg), "%s: %s", event_names[ev.ftp_event], ev.details);
+	}
+	ui_display_text_centered(120, msg);
+}
+
+const char *help_msg = "You now can connect to the ip address with port 21.";
+const char *help_msg2 = "Press MENU to go back to the firmware(or launcher).";
+
+// Display some help
+static void ui_display_help() {
+	tf_metrics_t m = tf_get_str_metrics(ui_font, help_msg);
+	point_t text_location = {
+		.x = fb->width/2 - m.width/2,
+		.y = fb->height-2*m.height,
+	};
+	tf_draw_str(fb, ui_font, help_msg, text_location);
+	text_location.y += m.height;
+	tf_draw_str(fb, ui_font, help_msg2, text_location);
+
+	display_update();
+}
+
+// Remove help message
+static void ui_clear_help() {
+	tf_metrics_t m = tf_get_str_metrics(ui_font, help_msg);
+	point_t text_location = {
+		.x = fb->width/2 - m.width/2,
+		.y = fb->height-2*m.height,
+	};
+	rect_t clear_rec = {
+		.x = 0,
+		.y = text_location.y,
+		.width = fb->width,
+		.height = 2*m.height,
+	};
+	fill_rectangle(fb, clear_rec, 0);
+	display_update();
+}
+
+static void ui_display_msg(const char *title, const char *msg) {
+	tf_metrics_t m1 = tf_get_str_metrics(ui_font, title);
+	tf_metrics_t m2 = tf_get_str_metrics(ui_font, msg);
+	// determine message location
+	point_t text_location = {
+		.x = fb->width/2 - (MAX(m1.width,m2.width))/2,
+		.y = fb->height/2 - (m1.height+m2.height)/2,
+	};
+	rect_t clear_rec = {
+		.x = 0,
+		.y = text_location.y,
+		.width = fb->width,
+		.height = m1.height+m2.height,
+	};
+
+	fill_rectangle(fb, clear_rec, 0);
+	tf_draw_str(fb, ui_font, title, text_location);
+	text_location.y += m1.height;
+	tf_draw_str(fb, ui_font, msg, text_location);
+
+	display_update();
+}
+
+// This task updates the status of the wifi and ftp server and reacts to user input
+static void main_task(void *arg) {
     event_t event;
 	bool running = true;
 	BaseType_t got_event;
-	view_init();
-	view_update();
+	ui_display_status();
 
 	while(running) {
-		// Manual wifi connection request
-		// TODO: Figure out why scanning doesn't work for my wifi
-		wifi_state_t state = wifi_get_state();
-		if (wifi_network_count > 0 && state != WIFI_STATE_CONNECTED && state != WIFI_STATE_CONNECTING) {
-			printf("attempting to connect to first network\n");
-			wifi_connect_network(wifi_networks[0]);
-		}
-
 		// Handle events
         got_event = xQueueReceive(event_queue, &event, portMAX_DELAY);
 		if (got_event != pdTRUE) {
@@ -165,16 +212,21 @@ static void display_status_task(void *arg) {
 				}
 				break;
 			case EVENT_TYPE_WIFI_DISCONNECTED:
-				view_update();
+				ui_clear_help();
+				ui_display_status();
 				ftp_stop();
-				ftp_init(); // TODO: Probably have to move this?
+				ftp_init();
 				break;
 			case EVENT_TYPE_WIFI_CONNECTED:
-				view_update();
+				ui_display_status();
 				break;
 			case EVENT_TYPE_WIFI_GOT_IP:
-				view_update();
+				ui_display_status();
+				ui_display_help();
 				ftp_start();
+				break;
+			case EVENT_TYPE_FTP_EVENT:
+				ui_display_ftp_status(event.ftp);
 				break;
 			default:
 				printf("other event detected: %d\n", event.type);
@@ -187,16 +239,41 @@ static void display_status_task(void *arg) {
 	display_clear(0);
 	wifi_disable();
 	sdcard_deinit();
+	ui_free();
 
 	// Return to menu/firmware after exit
+	// TODO: What todo in official firmware?
     const esp_partition_t *part = esp_partition_find_first(
         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
     esp_ota_set_boot_partition(part);
     esp_restart();
 }
 
-// This task displays an error message describing on how to set the password
-static void display_config_task(void *arg) {
-	// TODO: Display help message or let user configure wifi
+void app_main(void)
+{
+    display_init();
+    backlight_init();
+    keypad_init();
+    event_init();
+	ui_init();
+	esp_err_t err;
+    ESP_ERROR_CHECK(nvs_flash_init());
+
+	if((err = sdcard_init("/sdcard")) != ESP_OK) {
+		ui_display_msg("SDCARD ERROR!", "Please insert the sdcard and restart the device.");
+		return;
+	}
+
+	wifi_init();
+	if (wifi_load_config(WIFI_CONFIG_PATH) == -1) {
+		ui_display_msg("CONFIGURATION ERROR!", "Make sure to have a proper wifi.json in your sdcards root.");
+		return;
+	}
+
+	wifi_enable();
+	wifi_register_changed_callback(on_wifi_changed);
+	ftp_init();
+
+    xTaskCreate(main_task, "main_task", 8192, NULL, 5, NULL);
 }
 

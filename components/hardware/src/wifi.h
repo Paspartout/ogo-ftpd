@@ -39,4 +39,4 @@ void wifi_register_scan_done_callback(wifi_scan_done_cb_t cb, void *arg);
 void wifi_register_changed_callback(wifi_changed_cb_t cb);
 void wifi_backup_config(void);
 int wifi_restore_config(void);
-int wifi_load_config(void);
+int wifi_load_config(const char* path);
