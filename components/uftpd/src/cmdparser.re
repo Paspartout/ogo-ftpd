@@ -78,7 +78,7 @@ FtpCmd parse_ftpcmd(const char *YYCURSOR) {
 	    end = "\x00" | "\n" | "\r\n";
 	    char = [^ \t\r\n\x00];
 	    char_and_ws = [^\r\n\x00];
-	    string = char char_and_ws+;
+	    string = char char_and_ws*;
 	    digit = [0-9];
 	    number
 	        = digit
