@@ -247,13 +247,14 @@ static void main_task(void *arg) {
 
 void app_main(void)
 {
-    display_init();
-    backlight_init();
-    keypad_init();
-    event_init();
+	display_init();
+	backlight_init();
+	backlight_percentage_set(50);
+	keypad_init();
+	event_init();
 	ui_init();
 	esp_err_t err;
-    ESP_ERROR_CHECK(nvs_flash_init());
+	ESP_ERROR_CHECK(nvs_flash_init());
 
 	if((err = sdcard_init("/sdcard")) != ESP_OK) {
 		ui_display_msg("SDCARD ERROR!", "Please insert the sdcard and restart the device.");

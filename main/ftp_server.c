@@ -14,6 +14,7 @@
 
 #include "event.h"
 #include <uftpd.h>
+#include <string.h>
 
 TaskHandle_t ftp_task_handle;
 uftpd_ctx ctx;

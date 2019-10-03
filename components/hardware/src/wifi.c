@@ -75,7 +75,7 @@ static void scan_done(void)
         free(s_scan_results);
         s_scan_results = NULL;
     }
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&s_scan_result_count));
+    esp_wifi_scan_get_ap_num(&s_scan_result_count);
     s_scan_results = malloc(s_scan_result_count * sizeof(wifi_ap_record_t));
     esp_wifi_scan_get_ap_records(&s_scan_result_count, s_scan_results);
     qsort(s_scan_results, s_scan_result_count, sizeof(wifi_ap_record_t), compare_wifi_ap_record_rssi);
@@ -118,7 +118,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
             }
             if (s_wifi_state == WIFI_STATE_CONNECTED) {
                 s_wifi_state = WIFI_STATE_DISCONNECTED;
-                ESP_ERROR_CHECK(esp_wifi_connect());
+                esp_wifi_connect();
                 break;
             }
             if (s_wifi_state != WIFI_STATE_DISABLED) {
@@ -437,8 +437,8 @@ void wifi_connect_network(wifi_network_t *network)
     strncpy((char *)wifi_config.sta.ssid, network->ssid, sizeof(wifi_config.sta.ssid));
     strncpy((char *)wifi_config.sta.password, network->password, sizeof(wifi_config.sta.password));
 
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_connect());
+    esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config);
+    esp_wifi_connect();
     s_wifi_state = WIFI_STATE_CONNECTING;
 
     s_current_network = network;
