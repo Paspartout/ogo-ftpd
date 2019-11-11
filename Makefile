@@ -4,7 +4,7 @@
 #
 
 PROJECT_NAME := ogo-ftpd
-VERSION := 0.1.2
+VERSION := 0.1.3
 
 
 include $(IDF_PATH)/make/project.mk
